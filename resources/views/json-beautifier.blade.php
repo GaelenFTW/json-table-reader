@@ -99,7 +99,7 @@
 
             table = $('#jsonTable').DataTable();
 
-            // Row expansion (unbind first to prevent duplicate listeners)
+            // Row expansion
             $('#jsonTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
                 let tr = $(this).closest('tr');
                 let row = table.row(tr);
@@ -123,7 +123,7 @@
                 }
             });
 
-            // Expand all
+            // Expand 
             $('#expandAll').off().on('click', () => {
                 $('#jsonTable tbody tr').each(function () {
                     let row = table.row(this);
@@ -142,7 +142,7 @@
                 });
             });
 
-            // Collapse all
+            // Collapse 
             $('#collapseAll').off().on('click', () => {
                 $('#jsonTable tbody tr').each(function () {
                     let row = table.row(this);
@@ -179,9 +179,8 @@
               $('#inputJson').val('');
 
               if (table) {
-                  $('#jsonTable tbody').off('click', 'td.details-control'); // remove old listeners
+                  $('#jsonTable tbody').off('click', 'td.details-control'); 
 
-                  // Close all expanded child rows
                   $('#jsonTable tbody tr').each(function () {
                       let row = table.row(this);
                       if (row.child && row.child.isShown()) {
@@ -196,7 +195,7 @@
               $('#jsonHeader').empty();
               $('#jsonTable tbody').empty();
           });
-          
+
     </script>
 </body>
 </html>
