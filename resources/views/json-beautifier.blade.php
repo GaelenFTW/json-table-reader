@@ -1,253 +1,202 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>JSON Beautifier — Expandable Nested Tables</title>
-
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
-
-  <style>
-    /* small styling for nested tables/details */
-    .nested-table { font-size: 0.9rem; margin-top: 6px; border-collapse: collapse; width:100%; }
-    .nested-table th, .nested-table td { padding: 6px; border: 1px solid #e5e7eb; }
-    .detail-key { padding: 6px 0; }
-    .details-row td { background: #fafafa; }
-    .view-field { cursor: pointer; }
-    .highlight-flash { animation: highlight 1s ease; }
-    @keyframes highlight {
-      from { background: #fff59d; } to { background: transparent; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Beautifier — Expandable Table</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <style>
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+        .badge.string { background: #e0f7fa; color: #006064; }
+        .badge.number { background: #f1f8e9; color: #33691e; }
+        .badge.object { background: #ede7f6; color: #4527a0; }
+        .badge.array { background: #fff3e0; color: #e65100; }
+    </style>
 </head>
-<body class="bg-gray-50 p-6 text-gray-800">
-  <div class="max-w-6xl mx-auto">
-    <h1 class="text-2xl font-semibold mb-4">JSON Beautifier — Expandable Nested Tables</h1>
+<body>
+    <h2>JSON Beautifier — Expandable Table</h2>
 
-    <label class="block mb-2 font-medium">Input JSON or URL</label>
-    <textarea id="inputJson" rows="6" class="w-full p-3 border rounded" placeholder='Paste JSON or URL like https://api.example.com/data'></textarea>
+    <textarea id="inputJson" rows="4" cols="80" placeholder="Paste JSON or URL here..."></textarea><br>
+    <button id="fetchJson">Beautify</button>
+    <button id="expandAll">Expand All</button>
+    <button id="collapseAll">Collapse All</button>
+    <button id="clearTable">Clear</button>
 
-    <div class="flex gap-2 mt-3">
-      <button id="clientBeautify" class="px-4 py-2 bg-blue-600 text-white rounded">Render Table</button>
-      <button id="clear" class="px-4 py-2 bg-red-200 rounded">Clear</button>
-    </div>
+    <hr>
 
-    <div class="mt-6">
-      <label class="block mb-2 font-medium">Result (Click + to expand)</label>
-      <div id="tableContainer" class="overflow-x-auto bg-white shadow rounded p-4"></div>
-    </div>
-  </div>
+    <table id="jsonTable" class="display" style="width:100%">
+        <thead><tr id="jsonHeader"></tr></thead>
+        <tbody></tbody>
+    </table>
 
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script>
+        let table;
 
-  <script>
-    // helper: escape HTML to avoid XSS
-    function escapeHtml(str) {
-      if (str === null || str === undefined) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
+        function typeBadge(val) {
+            if (Array.isArray(val)) return '<span class="badge array">Array(' + val.length + ')</span>';
+            if (typeof val === 'object' && val !== null) return '<span class="badge object">Object</span>';
+            if (typeof val === 'string') return '<span class="badge string">String</span>';
+            if (typeof val === 'number') return '<span class="badge number">Number</span>';
+            return val;
+        }
 
-    function isPrimitive(v) {
-      return v === null || (typeof v !== 'object' && typeof v !== 'function');
-    }
+        function buildNestedTable(obj) {
+            if (typeof obj !== 'object' || obj === null) return obj;
 
-    // Render any value recursively: primitives, arrays, objects
-    function formatValue(value) {
-      if (value === null) return '<em>null</em>';
-      if (typeof value === 'string') return escapeHtml(value);
-      if (typeof value === 'number' || typeof value === 'boolean') return escapeHtml(String(value));
+            let html = '<table class="display compact" style="margin-left:20px">';
+            html += '<thead><tr>';
+            Object.keys(obj[0] || obj).forEach(k => html += '<th>' + k + '</th>');
+            html += '</tr></thead><tbody>';
 
-      if (Array.isArray(value)) {
-        if (value.length === 0) return '<em>Empty array</em>';
-
-        // array of objects -> table
-        if (value.every(item => item && typeof item === 'object' && !Array.isArray(item))) {
-          const headers = [...new Set(value.flatMap(item => Object.keys(item)))];
-          let html = `<table class="nested-table">`;
-          html += `<thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>`;
-          html += `<tbody>`;
-          value.forEach(row => {
-            html += '<tr>';
-            headers.forEach(h => {
-              const cell = row[h];
-              // allow recursion inside cells
-              html += `<td>${formatValue(cell)}</td>`;
+            let rows = Array.isArray(obj) ? obj : [obj];
+            rows.forEach(row => {
+                html += '<tr>';
+                Object.keys(row).forEach(k => {
+                    html += '<td>' + (typeof row[k] === 'object' ? typeBadge(row[k]) : row[k]) + '</td>';
+                });
+                html += '</tr>';
             });
-            html += '</tr>';
-          });
-          html += `</tbody></table>`;
-          return html;
+
+            html += '</tbody></table>';
+            return html;
         }
 
-        // mixed array or array of primitives -> list
-        return `<div><ul>${value.map(v => `<li>${formatValue(v)}</li>`).join('')}</ul></div>`;
-      }
+        function renderTable(data) {
+            if (table) {
+            // Close child rows before destroy
+            $('#jsonTable tbody tr').each(function () {
+                let row = table.row(this);
+                if (row.child && row.child.isShown()) {
+                    row.child.hide();
+                }
+            });
 
-      // object -> list of key: value (values can be recursively formatted)
-      if (typeof value === 'object') {
-        let html = `<div>`;
-        for (const [k, v] of Object.entries(value)) {
-          // wrap each key/value so we can focus it later with data-key
-          const safeKey = escapeHtml(k);
-          html += `<div class="detail-key" data-key="${escapeHtml(k)}"><strong>${safeKey}</strong>: ${formatValue(v)}</div>`;
+            table.clear().destroy();
+            table = null;
+            }
+
+            $('#jsonHeader').empty();
+            $('#jsonTable tbody').empty();
+
+            if (!Array.isArray(data)) data = [data];
+
+            let keys = Object.keys(data[0] || {});
+            $('#jsonHeader').append('<th></th>');
+            keys.forEach(k => $('#jsonHeader').append('<th>' + k + '</th>'));
+
+            data.forEach(row => {
+                let tr = '<tr><td class="details-control">+</td>';
+                keys.forEach(k => {
+                    let val = row[k];
+                    tr += '<td>' + (typeof val === 'object' ? typeBadge(val) : val) + '</td>';
+                });
+                tr += '</tr>';
+                $('#jsonTable tbody').append(tr);
+            });
+
+            table = $('#jsonTable').DataTable();
+
+            // Row expansion (unbind first to prevent duplicate listeners)
+            $('#jsonTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
+                let tr = $(this).closest('tr');
+                let row = table.row(tr);
+
+                if (row.child.isShown()) {
+                    row.child.hide();
+                    tr.removeClass('shown');
+                    $(this).text('+');
+                } else {
+                    let rowData = data[row.index()];
+                    let nestedHtml = '<div>';
+                    Object.entries(rowData).forEach(([k, v]) => {
+                        if (typeof v === 'object' && v !== null) {
+                            nestedHtml += '<b>' + k + '</b>: ' + buildNestedTable(v) + '<br>';
+                        }
+                    });
+                    nestedHtml += '</div>';
+                    row.child(nestedHtml).show();
+                    tr.addClass('shown');
+                    $(this).text('–');
+                }
+            });
+
+            // Expand all
+            $('#expandAll').off().on('click', () => {
+                $('#jsonTable tbody tr').each(function () {
+                    let row = table.row(this);
+                    if (!row.child.isShown()) {
+                        let rowData = data[row.index()];
+                        let nestedHtml = '<div>';
+                        Object.entries(rowData).forEach(([k, v]) => {
+                            if (typeof v === 'object' && v !== null) {
+                                nestedHtml += '<b>' + k + '</b>: ' + buildNestedTable(v) + '<br>';
+                            }
+                        });
+                        nestedHtml += '</div>';
+                        row.child(nestedHtml).show();
+                        $(this).addClass('shown').find('td.details-control').text('–');
+                    }
+                });
+            });
+
+            // Collapse all
+            $('#collapseAll').off().on('click', () => {
+                $('#jsonTable tbody tr').each(function () {
+                    let row = table.row(this);
+                    if (row.child.isShown()) {
+                        row.child.hide();
+                        $(this).removeClass('shown').find('td.details-control').text('+');
+                    }
+                });
+            });
         }
-        html += `</div>`;
-        return html;
-      }
 
-      // fallback
-      return escapeHtml(String(value));
-    }
+        // Fetch JSON
+        $('#fetchJson').on('click', () => {
+            let input = $('#inputJson').val().trim();
 
-    // Build the details area for a row (shows each top-level key and formatted value)
-    function formatRowDetails(rowObj) {
-      let html = `<div class="row-details">`;
-      for (const [k, v] of Object.entries(rowObj)) {
-        html += `<div class="mb-3"><div class="font-semibold mb-1">${escapeHtml(k)}</div>${formatValue(v)}</div>`;
-      }
-      html += `</div>`;
-      return html;
-    }
-
-    let dataTableInstance = null;
-
-    function renderTableFromJson(jsonText) {
-      let parsed;
-      try {
-        parsed = JSON.parse(jsonText);
-      } catch (e) {
-        alert("Invalid JSON: " + e.message);
-        return;
-      }
-
-      if (!Array.isArray(parsed)) parsed = [parsed];
-
-      if (parsed.length === 0) {
-        document.getElementById("tableContainer").innerHTML = "<p>No data</p>";
-        return;
-      }
-
-      // Destroy previous DataTable if exists
-      if ($.fn.dataTable.isDataTable('#jsonTable')) {
-        $('#jsonTable').DataTable().destroy();
-      }
-
-      // Collect headers
-      const headers = [...new Set(parsed.flatMap(obj => Object.keys(obj)))];
-
-      // Build main table HTML - first col is expand control
-      let tableHtml = `<table id="jsonTable" class="display stripe w-full"><thead><tr><th></th>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>`;
-
-      parsed.forEach((row, idx) => {
-        tableHtml += `<tr data-row-index="${idx}">`;
-        tableHtml += `<td class="details-control text-center cursor-pointer" style="width:40px;">+</td>`;
-        headers.forEach(h => {
-          const val = row[h];
-          if (val !== undefined && val !== null && typeof val === 'object') {
-            // show a view button with preview
-            const preview = Array.isArray(val) ? `Array(${val.length})` : 'Expand';
-            tableHtml += `<td><button class="view-field px-2 py-1 rounded border text-sm" data-row="${idx}" data-key="${escapeHtml(h)}">${escapeHtml(preview)}</button></td>`;
-          } else {
-            tableHtml += `<td>${escapeHtml(val)}</td>`;
-          }
+            $.ajax({
+                url: "/fetch-json",
+                method: "POST",
+                data: { input: input, _token: $('meta[name="csrf-token"]').attr('content') },
+                success: function (res) {
+                    if (res.success) {
+                        renderTable(res.data);
+                    } else {
+                        alert("Error: " + res.error);
+                    }
+                },
+                error: function (xhr) {
+                    alert("Failed: " + xhr.responseText);
+                }
+            });
         });
-        tableHtml += `</tr>`;
-      });
+          // Clear button
+          $('#clearTable').on('click', () => {
+              $('#inputJson').val('');
 
-      tableHtml += `</tbody></table>`;
+              if (table) {
+                  $('#jsonTable tbody').off('click', 'td.details-control'); // remove old listeners
 
-      document.getElementById("tableContainer").innerHTML = tableHtml;
+                  // Close all expanded child rows
+                  $('#jsonTable tbody tr').each(function () {
+                      let row = table.row(this);
+                      if (row.child && row.child.isShown()) {
+                          row.child.hide();
+                      }
+                  });
 
-      // Initialize DataTable
-      dataTableInstance = $('#jsonTable').DataTable({
-        pageLength: 10,
-        autoWidth: false,
-        columnDefs: [
-          { orderable: false, targets: 0 } // disable sorting on expand column
-        ]
-      });
+                  table.clear().destroy();
+                  table = null;
+              }
 
-      // Expand/collapse row details (full row)
-      $('#jsonTable tbody').off('click', 'td.details-control').on('click', 'td.details-control', function () {
-        const tr = $(this).closest('tr');
-        const rowIndex = parseInt(tr.attr('data-row-index'), 10);
-        // find immediate next details-row; toggle if exists
-        const next = tr.next('.details-row');
-        if (next.length) {
-          next.remove();
-          $(this).text('+');
-        } else {
-          const rowData = parsed[rowIndex];
-          const nestedHtml = formatRowDetails(rowData);
-          tr.after(`<tr class="details-row"><td colspan="${headers.length + 1}">${nestedHtml}</td></tr>`);
-          $(this).text('−');
-        }
-      });
-
-      // Click view-field: expand (if needed) and scroll to the specific key inside details
-      $('#jsonTable tbody').off('click', 'button.view-field').on('click', 'button.view-field', function (e) {
-        e.stopPropagation();
-        const rowIndex = parseInt($(this).attr('data-row'), 10);
-        const key = $(this).attr('data-key');
-        const tr = $(`#jsonTable tbody tr[data-row-index="${rowIndex}"]`);
-        const control = tr.find('td.details-control');
-        // if not expanded, click control to expand
-        if (!tr.next().hasClass('details-row')) {
-          control.trigger('click');
-        }
-        // after expand, find the detail-key with data-key and highlight/scroll
-        setTimeout(() => {
-          const detailsRow = tr.next('.details-row');
-          if (!detailsRow.length) return;
-          // find element inside details area that matches the key (use attribute selector)
-          const target = detailsRow.find(`.detail-key[data-key="${key}"]`).first();
-          if (target.length) {
-            // temporarily highlight
-            target.addClass('highlight-flash');
-            // scroll into view inside the details row container
-            target[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-            // remove highlight after a second
-            setTimeout(() => target.removeClass('highlight-flash'), 1200);
-          }
-        }, 100);
-      });
-    }
-
-    // detect URL vs raw JSON, support fetching
-    async function processInput(input) {
-      input = input.trim();
-      if (!input) {
-        alert('Please provide JSON or a URL');
-        return;
-      }
-      if (/^https?:\/\//i.test(input)) {
-        try {
-          const res = await fetch(input);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const data = await res.json();
-          renderTableFromJson(JSON.stringify(data));
-        } catch (e) {
-          alert('Fetch failed: ' + e.message + '. If this is a cross-origin API, consider server-side fetch.');
-        }
-      } else {
-        renderTableFromJson(input);
-      }
-    }
-
-    document.getElementById('clientBeautify').addEventListener('click', () => {
-      processInput(document.getElementById('inputJson').value);
-    });
-    document.getElementById('clear').addEventListener('click', () => {
-      document.getElementById('inputJson').value = '';
-      document.getElementById('tableContainer').innerHTML = '';
-    });
-  </script>
+              $('#jsonHeader').empty();
+              $('#jsonTable tbody').empty();
+          });
+          
+    </script>
 </body>
 </html>
