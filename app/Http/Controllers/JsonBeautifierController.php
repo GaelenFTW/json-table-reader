@@ -17,7 +17,7 @@ class JsonBeautifierController extends Controller
     public function beautify(Request $request)
     {
         $request->validate([
-            'json' => ['required', 'string', 'max:131072'], // ~128KB limit; adjust as needed
+            'json' => ['required', 'string', 'max:1310720'], // ~128KB limit; adjust as needed
         ]);
 
         $input = $request->input('json');
